@@ -8,7 +8,10 @@ import crypto.UInt256;
 import message.request.cmd.GetAccountCmd;
 import message.request.cmd.SendRawTransactionCmd;
 import message.response.ExecResult;
-import message.transaction.*;
+import message.transaction.FixedNumber;
+import message.transaction.ISerialize;
+import message.transaction.Transaction;
+import message.transaction.TransactionType;
 import message.transaction.payload.*;
 import message.util.GenericJacksonWriter;
 import message.util.RequestCallerService;
@@ -20,6 +23,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.security.interfaces.ECPrivateKey;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -41,9 +45,6 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
     @Autowired
     private CryptoService cryptoService;
 
-    @Autowired
-    private IProduceTransaction txFactory;
-
     @Value("${app.core.rpc}")
     private String rpcUrl;
 
@@ -51,14 +52,13 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
     public void voteOnProposal(final String producer, final String password,
                                final String proposalID, final boolean value) {
         try {
-            final UInt256 proposal = new UInt256();
-            proposal.fromString(proposalID);
+            final UInt256 proposal = new UInt256(proposalID);
             final ProposalVote vote = ProposalVote.builder()
                     .version(1)
                     .proposalId(proposal)
                     .vote(value)
                     .build();
-            executeDefaultTx(producer, password, vote, TxObj.CALL, ProposalVote.SCRIPT_HASH);
+            executeDefaultCallTx(producer, password, vote, ProposalVote.SCRIPT_HASH);
         } catch (Exception e){
             log.warn("Vote failed with: " + e.getMessage());
             Stream.of(e.getStackTrace()).forEach(stackTraceElement -> log.warn(stackTraceElement.toString()));
@@ -69,23 +69,36 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
     public void createNewProposal(final String producer, final String password, final int type,
                                   final double amount, final long timestamp) {
         try{
-            final Proposal proposal = Proposal.builder()
-                    .version(1)
-                    .activeTime(timestamp)
-                    .value(new FixedNumber(amount, FixedNumber.CPX).getBytes())
-                    .build();
+            final Proposal proposal;
             switch (type){
                 case 1:
-                    proposal.setType(ProposalType.BLOCK_AWARD);
+                    proposal = Proposal.builder()
+                            .version(1)
+                            .activeTime(timestamp)
+                            .value(new FixedNumber(amount, FixedNumber.CPX))
+                            .type(ProposalType.BLOCK_AWARD)
+                            .build();
                     break;
                 case 2:
-                    proposal.setType(ProposalType.TX_MIN_GAS);
+                    proposal = Proposal.builder()
+                            .version(1)
+                            .activeTime(timestamp)
+                            .value(new FixedNumber(amount, FixedNumber.CPX))
+                            .type(ProposalType.TX_MIN_GAS)
+                            .build();
                     break;
                 case 3:
-                    proposal.setType(ProposalType.TX_GAS_LIMIT);
+                    proposal = Proposal.builder()
+                            .version(1)
+                            .activeTime(timestamp)
+                            .value(new FixedNumber(amount, FixedNumber.CPX))
+                            .type(ProposalType.TX_GAS_LIMIT)
+                            .build();
                     break;
+                default:
+                    proposal = Proposal.builder().build();
             }
-            executeDefaultTx(producer, password, proposal, TxObj.CALL, Proposal.SCRIPT_HASH);
+            executeDefaultCallTx(producer, password, proposal, Proposal.SCRIPT_HASH);
         } catch (Exception e){
             log.warn("Proposal failed with: " + e.getMessage());
             Stream.of(e.getStackTrace()).forEach(stackTraceElement -> log.warn(stackTraceElement.toString()));
@@ -101,7 +114,7 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
                     new FixedNumber(amount, FixedNumber.CPX),
                     new FixedNumber(gasPrice, FixedNumber.KGP),
                     new FixedNumber(gasLimit, FixedNumber.KP),
-                    TxObj.TRANSFER, CPXKey.getScriptHashFromCPXAddress(to));
+                    TransactionType.TRANSFER, CPXKey.getScriptHashFromCPXAddress(to));
         } catch (Exception e) {
             log.error("This is not a valid address: " + to);
         }
@@ -126,11 +139,12 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
                     .register(true)
                     .frozen(false)
                     .genesisWitness(false)
+                    .ownerPubKeyHash(CPXKey.getScriptHashFromCPXAddress(registerAddress))
                     .build();
-            executeTxWithGasLimitAndGasPrice(from, password, registration,
+            executeCallTxWithGasLimitAndGasPrice(from, password, registration,
                     new FixedNumber(gasPrice, FixedNumber.KGP),
                     new FixedNumber(gasLimit, FixedNumber.KP),
-                    TxObj.REGISTER, Registration.SCRIPT_HASH);
+                    Registration.SCRIPT_HASH);
         } catch (Exception e){
             log.warn("Registration failed with: " + e.getMessage());
             Stream.of(e.getStackTrace()).forEach(stackTraceElement -> log.warn(stackTraceElement.toString()));
@@ -146,10 +160,10 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
                     .operationType(type.equals("add") ? OperationType.REGISTER : OperationType.REGISTER_CANCEL)
                     .voterPubKeyHash(CPXKey.getScriptHashFromCPXAddress(candidate))
                     .build();
-            executeTxWithGasLimitAndGasPrice(from, password, vote,
+            executeCallTxWithGasLimitAndGasPrice(from, password, vote,
                     new FixedNumber(gasPrice, FixedNumber.KGP),
                     new FixedNumber(gasLimit, FixedNumber.KP),
-                    TxObj.VOTE, Vote.SCRIPT_HASH);
+                    Vote.SCRIPT_HASH);
         } catch (Exception e){
             log.warn("Vote failed with: " + e.getMessage());
             Stream.of(e.getStackTrace()).forEach(stackTraceElement -> log.warn(stackTraceElement.toString()));
@@ -161,9 +175,9 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
             final String accountString = requestCaller.postRequest(rpcUrl, new GetAccountCmd(address));
             log.info("Get Account was: " + accountString);
             final ExecResult resultAccount = jacksonWriter.getObjectFromString(ExecResult.class, accountString);
-            log.info("Result was: " + resultAccount.getResult().toString() + "\nStatus: " + resultAccount.getStatus());
-            if(resultAccount.isSucceed()) {
-                final long nonce = ((Number) resultAccount.getResult().get("nextNonce")).longValue();
+            log.info("Result was: " + resultAccount.result.toString() + "\nStatus: " + resultAccount.status);
+            if(resultAccount.succeed) {
+                final long nonce = ((Number) resultAccount.result.get("nextNonce")).longValue();
                 return Optional.of(nonce);
             }
         } catch (Exception e){
@@ -173,43 +187,24 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
         return Optional.empty();
     }
 
-    void executeDefaultTx(final String walletAddress, final String password, final ISerialize payload,
-                          final TxObj type, final String toAddress) {
+    void executeDefaultCallTx(final String walletAddress, final String password, final ISerialize payload, final String toAddress) {
         executeTx(walletAddress, password, payload,
                 new FixedNumber(0, FixedNumber.P),
                 new FixedNumber(1, FixedNumber.KGP),
                 new FixedNumber(500, FixedNumber.KP),
-                type, toAddress);
+                TransactionType.CALL, toAddress);
     }
 
-    void executeTxWithGasPrice(final String walletAddress, final String password, final ISerialize payload,
-                               final FixedNumber gasPrice, final TxObj type, final String toAddress){
+    void executeCallTxWithGasLimitAndGasPrice(final String walletAddress, final String password, final ISerialize payload,
+                                          final FixedNumber gasPrice, final FixedNumber gasLimit, final String toAddress){
         executeTx(walletAddress, password, payload,
                 new FixedNumber(0, FixedNumber.P),
-                gasPrice,
-                new FixedNumber(500, FixedNumber.KP),
-                type, toAddress);
-    }
-
-    void executeTxWithGasLimit(final String walletAddress, final String password, final ISerialize payload,
-                               final FixedNumber gasLimit, final TxObj type, final String toAddress){
-        executeTx(walletAddress, password, payload,
-                new FixedNumber(0, FixedNumber.P),
-                new FixedNumber(1, FixedNumber.KGP),
-                gasLimit, type, toAddress);
-    }
-
-    void executeTxWithGasLimitAndGasPrice(final String walletAddress, final String password, final ISerialize payload,
-                                          final FixedNumber gasPrice, final FixedNumber gasLimit, final TxObj type,
-                                          final String toAddress){
-        executeTx(walletAddress, password, payload,
-                new FixedNumber(0, FixedNumber.P),
-                gasPrice, gasLimit, type, toAddress);
+                gasPrice, gasLimit, TransactionType.CALL, toAddress);
     }
 
     void executeTx(final String walletAddress, final String password, final ISerialize payload,
               final FixedNumber amount, final FixedNumber gasPrice, final FixedNumber gasLimit,
-                   final TxObj type, final String toAddress){
+                   final TransactionType type, final String toAddress){
         final Optional<Wallet> wallet = walletRepository.findById(walletAddress);
         wallet.ifPresentOrElse(account -> {
             try {
@@ -220,8 +215,18 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
                 if(nonceOpt.isPresent()) {
                     final long nonce = nonceOpt.get();
                     log.info("Nonce is " + nonce);
-                    final Transaction tx = txFactory.create(type, key, payload, toAddress,
-                            nonce, amount, gasPrice, gasLimit);
+                    final Transaction tx = Transaction.builder()
+                            .txType(type)
+                            .fromPubKeyHash(CPXKey.getScriptHash(key))
+                            .toPubKeyHash(CPXKey.getScriptHashFromCPXAddress(toAddress))
+                            .amount(amount)
+                            .gasPrice(gasPrice)
+                            .gasLimit(gasLimit)
+                            .nonce(nonce)
+                            .version(1)
+                            .data(payload.getBytes())
+                            .executeTime(Instant.now().toEpochMilli())
+                            .build();
                     log.info("Executing transaction");
                     final SendRawTransactionCmd cmd = new SendRawTransactionCmd(cryptoService.signBytes(key, tx));
                     final String result = requestCaller.postRequest(rpcUrl, cmd);

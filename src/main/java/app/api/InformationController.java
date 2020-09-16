@@ -24,9 +24,12 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import static com.mongodb.client.model.Filters.*;
+import static com.mongodb.client.model.Filters.gte;
 import static com.mongodb.client.model.Projections.include;
 
 @Controller
@@ -172,7 +175,7 @@ public class InformationController {
         try {
             final String responseString = requestCaller.postRequest(rpcUrl, msg);
             final ExecResult response = jacksonWriter.getObjectFromString(ExecResult.class, responseString);
-            return response.isSucceed() ? jacksonWriter.getStringFromRequestObject(response.getResult()) : "{}";
+            return response.succeed ? jacksonWriter.getStringFromRequestObject(response.result) : "{}";
         } catch (Exception e) {
             log.error("RPC Endpoint connection error: " + rpcUrl);
             return "{}";

@@ -53,10 +53,10 @@ public class DataQueryLogic implements IQueryProposal, IQueryProducer, IQueryWal
         try {
             final String allProposalsString = requestCaller.postRequest(rpcUrl, new GetAllProposalCmd());
             final ExecResult allProposalsResult = jacksonWriter.getObjectFromString(ExecResult.class, allProposalsString);
-            if(allProposalsResult.isSucceed()){
+            if(allProposalsResult.succeed){
                 final List<JsonElement> proposalList = new ArrayList<>();
                 JsonParser.parseString
-                        (jacksonWriter.getStringFromRequestObject(allProposalsResult.getResult()))
+                        (jacksonWriter.getStringFromRequestObject(allProposalsResult.result))
                         .getAsJsonObject()
                         .get("proposals").getAsJsonArray().iterator()
                         .forEachRemaining(proposalList::add);
@@ -88,10 +88,10 @@ public class DataQueryLogic implements IQueryProposal, IQueryProducer, IQueryWal
                     .size();
             final String allVotesString = requestCaller.postRequest(rpcUrl, new GetAllProposalVotesCmd());
             final ExecResult allVotesResult = jacksonWriter.getObjectFromString(ExecResult.class, allVotesString);
-            if (allVotesResult.isSucceed()) {
+            if (allVotesResult.succeed) {
                 final List<JsonElement> votesList = new ArrayList<>();
                 JsonParser.parseString
-                        (jacksonWriter.getStringFromRequestObject(allVotesResult.getResult()))
+                        (jacksonWriter.getStringFromRequestObject(allVotesResult.result))
                         .getAsJsonObject()
                         .get("votes").getAsJsonArray().iterator()
                         .forEachRemaining(votesList::add);
@@ -177,8 +177,8 @@ public class DataQueryLogic implements IQueryProposal, IQueryProducer, IQueryWal
             try {
                 final String responseString = requestCaller.postRequest(rpcUrl, new GetAccountCmd(walletAddress));
                 final ExecResult response = jacksonWriter.getObjectFromString(ExecResult.class, responseString);
-                result.put("balance", response.getResult().get("balance") != null ? (String) response.getResult().get("balance") : "0");
-                result.put("nonce", response.getResult().get("nextNonce") != null ? response.getResult().get("nextNonce") : 0);
+                result.put("balance", response.result.get("balance") != null ? (String) response.result.get("balance") : "0");
+                result.put("nonce", response.result.get("nextNonce") != null ? response.result.get("nextNonce") : 0);
                 walletList.add(result);
             } catch (Exception e) {
                 walletList.add(result);
