@@ -218,7 +218,7 @@ public class TransactionLogic implements IProposalTx, ITransferTx, IProducerTx {
                     final Transaction tx = Transaction.builder()
                             .txType(type)
                             .fromPubKeyHash(CPXKey.getScriptHash(key))
-                            .toPubKeyHash(CPXKey.getScriptHashFromCPXAddress(toAddress))
+                            .toPubKeyHash(toAddress)
                             .amount(amount)
                             .gasPrice(gasPrice)
                             .gasLimit(gasLimit)
