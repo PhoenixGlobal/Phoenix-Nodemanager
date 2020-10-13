@@ -25,7 +25,7 @@
         <telegram.bot.version>4.1</telegram.bot.version>
         <apex.sdk.version>24faa33e7bfaedd3e2debe3ae26e549a17ab0323</apex.sdk.version>
         <spring.version>5.2.0.RELEASE</spring.version>
-        <junit.version>4.12</junit.version>
+        <junit.version>4.13.1</junit.version>
     </properties>
 
     <repositories>
